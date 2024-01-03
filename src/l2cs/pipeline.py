@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from dataclasses import dataclass
-from face_detection import RetinaFace
+import mediapipe as mp  # Importing MediaPipe
 
 from .utils import prep_input_numpy, getArch
 from .results import GazeResultContainer
@@ -35,13 +35,11 @@ class Pipeline:
         self.model.to(self.device)
         self.model.eval()
 
-        # Create RetinaFace if requested
+        # Initialize MediaPipe face detection
         if self.include_detector:
-
-            if device.type == 'cpu':
-                self.detector = RetinaFace()
-            else:
-                self.detector = RetinaFace(gpu_id=device.index)
+            self.mp_face_detection = mp.solutions.face_detection.FaceDetection(
+                min_detection_confidence=self.confidence_threshold
+            )
 
             self.softmax = nn.Softmax(dim=1)
             self.idx_tensor = [idx for idx in range(90)]
@@ -56,35 +54,27 @@ class Pipeline:
         scores = []
 
         if self.include_detector:
-            faces = self.detector(frame)
+            # Convert the BGR image to RGB before processing.
+            results = self.mp_face_detection.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
-            if faces is not None:
-                for box, landmark, score in faces:
+            if results.detections:
+                for detection in results.detections:
 
-                    # Apply threshold
-                    if score < self.confidence_threshold:
-                        continue
+                    bboxC = detection.location_data.relative_bounding_box
+                    ih, iw, _ = frame.shape
+                    x_min, y_min = int(bboxC.xmin * iw), int(bboxC.ymin * ih)
+                    x_max, y_max = int((bboxC.xmin + bboxC.width) * iw), int((bboxC.ymin + bboxC.height) * ih)
 
-                    # Extract safe min and max of x,y
-                    x_min = int(box[0])
-                    if x_min < 0:
-                        x_min = 0
-                    y_min = int(box[1])
-                    if y_min < 0:
-                        y_min = 0
-                    x_max = int(box[2])
-                    y_max = int(box[3])
-
-                    # Crop image
+                    # Crop and preprocess face image
                     img = frame[y_min:y_max, x_min:x_max]
                     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                     img = cv2.resize(img, (224, 224))
                     face_imgs.append(img)
 
                     # Save data
-                    bboxes.append(box)
-                    landmarks.append(landmark)
-                    scores.append(score)
+                    bboxes.append([x_min, y_min, x_max, y_max])
+                    landmarks.append([])  # MediaPipe does not provide landmarks in the same way as RetinaFace
+                    scores.append(detection.score[0])
 
                 # Predict gaze
                 pitch, yaw = self.predict_gaze(np.stack(face_imgs))

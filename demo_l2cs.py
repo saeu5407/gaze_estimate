@@ -14,8 +14,6 @@ import torchvision
 from PIL import Image
 from PIL import Image, ImageOps
 
-from face_detection import RetinaFace
-
 from src.l2cs import select_device, draw_gaze, getArch, Pipeline, render
 
 CWD = pathlib.Path.cwd()
@@ -30,7 +28,7 @@ def parse_args():
         default="cpu", type=str)
     parser.add_argument(
         '--snapshot', dest='snapshot', help='Path of model snapshot.',
-        default='output/snapshots/L2CS-gaze360-_loader-180-4/_epoch_55.pkl', type=str)
+        default='models/L2CSNet_gaze360.pkl', type=str)
     parser.add_argument(
         '--cam', dest='cam_id', help='Camera device id to use [0]',
         default=0, type=int)
